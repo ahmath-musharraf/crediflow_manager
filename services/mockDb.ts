@@ -66,6 +66,7 @@ class MockDbService {
   private expenses: ExpenseRecord[] = []; 
   private activities: ActivityLog[] = [];
   public isInitialized = false;
+  public usingPostgres = false;
 
   // Initialize DB: Create tables and fetch data
   async init() {
@@ -172,17 +173,19 @@ class MockDbService {
       
       // Sync DB data to local storage for next time
       this.saveToLocalStorage();
-      this.isInitialized = true;
+      this.usingPostgres = true;
       console.log('Database initialized successfully.');
     } catch (e) {
-      console.error("CRITICAL DB ERROR:", e);
-      // Fallback to in-memory/localstorage only if DB fails completely
+      console.error("CRITICAL DB ERROR - Using LocalStorage fallback:", e);
+      this.usingPostgres = false;
+      // Fallback to in-memory/localstorage only if DB fails completely and local is empty
       if (this.shops.length === 0) {
         this.shops = INITIAL_SHOPS;
         this.products = INITIAL_PRODUCTS;
         this.customers = INITIAL_CUSTOMERS;
         this.saveToLocalStorage();
       }
+    } finally {
       this.isInitialized = true;
     }
   }
@@ -231,20 +234,22 @@ class MockDbService {
     this.customers = INITIAL_CUSTOMERS;
     this.saveToLocalStorage();
 
-    // Bulk insert initial data
-    try {
-      for (const s of INITIAL_SHOPS) {
-        await sql`INSERT INTO shops (id, name, type, color) VALUES (${s.id}, ${s.name}, ${s.type}, ${s.color})`;
-      }
-      for (const p of INITIAL_PRODUCTS) {
-        await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
-                  VALUES (${p.id}, ${p.shopId}, ${p.name}, ${p.category}, ${p.price}, ${p.wholesalePrice}, ${p.stock}, ${p.description || ''})`;
-      }
-      for (const c of INITIAL_CUSTOMERS) {
-        await sql`INSERT INTO customers (id, name, phone, type, shop_name, location, whatsapp, credit_limit, total_debt) 
-                  VALUES (${c.id}, ${c.name}, ${c.phone}, ${c.type}, ${c.shopName || ''}, ${c.location || ''}, ${c.whatsapp || ''}, ${c.creditLimit || 0}, ${c.totalDebt})`;
-      }
-    } catch (e) { console.error("Seed failed", e); }
+    // Bulk insert initial data if DB is connected
+    if (sql) {
+      try {
+        for (const s of INITIAL_SHOPS) {
+          await sql`INSERT INTO shops (id, name, type, color) VALUES (${s.id}, ${s.name}, ${s.type}, ${s.color})`;
+        }
+        for (const p of INITIAL_PRODUCTS) {
+          await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
+                    VALUES (${p.id}, ${p.shopId}, ${p.name}, ${p.category}, ${p.price}, ${p.wholesalePrice}, ${p.stock}, ${p.description || ''})`;
+        }
+        for (const c of INITIAL_CUSTOMERS) {
+          await sql`INSERT INTO customers (id, name, phone, type, shop_name, location, whatsapp, credit_limit, total_debt) 
+                    VALUES (${c.id}, ${c.name}, ${c.phone}, ${c.type}, ${c.shopName || ''}, ${c.location || ''}, ${c.whatsapp || ''}, ${c.creditLimit || 0}, ${c.totalDebt})`;
+        }
+      } catch (e) { console.error("Seed failed", e); }
+    }
   }
 
   // --- READS (Synchronous from Cache) ---

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Shop, User, Role } from '../types';
 import { db, authenticate, authenticateShop } from '../services/mockDb';

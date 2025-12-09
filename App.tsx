@@ -16,7 +16,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initDb = async () => {
-      await db.init();
+      // Race condition: If DB init hangs (e.g. bad connection string), 
+      // timeout after 3 seconds so the app still loads (in offline mode).
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3000));
+      
+      try {
+        await Promise.race([db.init(), timeoutPromise]);
+      } catch (e) {
+        console.warn("DB Init timed out or failed", e);
+      }
+      
       setIsDbReady(true);
     };
     initDb();
@@ -45,6 +54,7 @@ const App: React.FC = () => {
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-100">
         <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
         <p className="text-gray-600 font-medium">Connecting to Database...</p>
+        <p className="text-xs text-gray-400 mt-2">If this takes too long, we'll start in Offline Mode.</p>
       </div>
     );
   }

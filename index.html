@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CrediFlow Manager</title>
+    <script>
+      // Polyfill process for libraries that expect it (like Neon/Postgres drivers)
+      // Must be defined before any other scripts run
+      window.process = { env: { NODE_ENV: 'production' } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -26,10 +31,6 @@
         background: #94a3b8; 
       }
     </style>
-  <script>
-    // Polyfill process for libraries that expect it (like Neon/Postgres drivers)
-    window.process = { env: { NODE_ENV: 'production' } };
-  </script>
   <script type="importmap">
 {
   "imports": {

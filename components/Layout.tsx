@@ -1,6 +1,6 @@
-
 import React from 'react';
 import { User, Role, ViewState, Shop } from '../types';
+import { db } from '../services/mockDb';
 
 interface LayoutProps {
   user: User;
@@ -21,6 +21,7 @@ const Layout: React.FC<LayoutProps> = ({ user, currentShop, currentView, onNavig
   ];
 
   const isSuperAdmin = user.role === Role.SUPER_ADMIN;
+  const isOnline = db.usingPostgres;
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
@@ -31,9 +32,15 @@ const Layout: React.FC<LayoutProps> = ({ user, currentShop, currentView, onNavig
           <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
             CrediFlow
           </h1>
-          <div className="mt-2 flex items-center gap-2 px-2 py-1 bg-slate-800 rounded">
-            <div className={`w-2 h-2 rounded-full ${currentShop.color}`}></div>
-            <p className="text-xs text-white font-medium truncate">{currentShop.name}</p>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center gap-2 px-2 py-1 bg-slate-800 rounded">
+              <div className={`w-2 h-2 rounded-full ${currentShop.color}`}></div>
+              <p className="text-xs text-white font-medium truncate max-w-[100px]">{currentShop.name}</p>
+            </div>
+            <div className="flex items-center gap-1" title={isOnline ? "Connected to Neon DB" : "Offline (Local Storage)"}>
+              <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-yellow-500'}`}></div>
+              <span className="text-[10px] text-gray-400">{isOnline ? 'DB' : 'Local'}</span>
+            </div>
           </div>
           
           {isSuperAdmin && (
@@ -86,7 +93,10 @@ const Layout: React.FC<LayoutProps> = ({ user, currentShop, currentView, onNavig
       <div className="md:hidden fixed top-0 w-full bg-slate-900 text-white p-4 z-20 flex justify-between items-center shadow-lg">
         <div className="flex flex-col">
           <span className="font-bold text-lg">CrediFlow</span>
-          <span className="text-xs text-gray-400">{currentShop.name}</span>
+          <div className="flex items-center gap-2">
+             <span className="text-xs text-gray-400">{currentShop.name}</span>
+             <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+          </div>
         </div>
         <div className="flex gap-3">
           {isSuperAdmin && <button onClick={onSwitchShop} className="text-xs bg-slate-800 px-2 py-1 rounded">Switch</button>}

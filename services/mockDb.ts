@@ -1,7 +1,21 @@
-
+import { neon } from '@neondatabase/serverless';
 import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role, ActivityLog, Shop, ExpenseRecord } from '../types';
 
-// Initial Shops
+// Connect to Neon Database
+// We remove channel_binding for browser compatibility
+const DATABASE_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+
+// Initialize neon client safely
+let sql: any;
+try {
+  sql = neon(DATABASE_URL);
+} catch (e) {
+  console.error("Failed to initialize Neon client:", e);
+  // Fallback to null so we can handle it in init()
+  sql = null;
+}
+
+// Initial Mock Data (Used for seeding DB if empty)
 const INITIAL_SHOPS: Shop[] = [
   { id: 'shop1', name: 'Osaka - Kattankudy', type: 'WHOLESALE', color: 'bg-blue-600' },
   { id: 'shop2', name: 'Shop 2: City Retail', type: 'RETAIL', color: 'bg-emerald-600' },
@@ -9,7 +23,6 @@ const INITIAL_SHOPS: Shop[] = [
   { id: 'shop4', name: 'Shop 4: Warehouse B', type: 'WHOLESALE', color: 'bg-orange-600' }
 ];
 
-// Initial Mock Data (Distributed across shops)
 const INITIAL_PRODUCTS: Product[] = [
   { id: '1', shopId: 'shop1', name: 'Premium Cotton Shirt', category: 'Clothing', price: 1200, wholesalePrice: 800, stock: 150 },
   { id: '2', shopId: 'shop1', name: 'Denim Jeans - Bulk', category: 'Clothing', price: 1800, wholesalePrice: 1200, stock: 80 },
@@ -44,61 +57,204 @@ const INITIAL_CUSTOMERS: Customer[] = [
   },
 ];
 
-const INITIAL_TRANSACTIONS: Transaction[] = [
-  {
-    id: 't1',
-    shopId: 'shop1',
-    customerId: 'c2',
-    customerName: 'Rahul Traders (Wholesale)',
-    date: new Date(Date.now() - 86400000 * 5).toISOString(), // 5 days ago
-    items: [{ productId: '1', name: 'Premium Cotton Shirt', quantity: 10, price: 800 }],
-    totalAmount: 8000,
-    paidAmount: 3000,
-    balance: 5000,
-    status: 'PARTIAL'
-  },
-  {
-    id: 't2',
-    shopId: 'shop1',
-    customerId: 'c2',
-    customerName: 'Rahul Traders (Wholesale)',
-    date: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
-    items: [{ productId: '2', name: 'Denim Jeans - Slim', quantity: 10, price: 1200 }],
-    totalAmount: 12000,
-    paidAmount: 2000,
-    balance: 10000,
-    status: 'PARTIAL'
-  }
-];
-
 class MockDbService {
-  private shops: Shop[] = INITIAL_SHOPS;
-  private products: Product[] = INITIAL_PRODUCTS;
-  private customers: Customer[] = INITIAL_CUSTOMERS;
-  private transactions: Transaction[] = INITIAL_TRANSACTIONS;
+  private shops: Shop[] = [];
+  private products: Product[] = [];
+  private customers: Customer[] = [];
+  private transactions: Transaction[] = [];
   private payments: PaymentRecord[] = [];
   private expenses: ExpenseRecord[] = []; 
-  private activities: ActivityLog[] = [
-    {
-      id: 'log1',
-      shopId: 'shop1',
-      date: new Date(Date.now() - 86400000 * 5).toISOString(),
-      action: 'SYSTEM_INIT',
-      description: 'System initialized with default data',
-      performedBy: 'System'
-    }
-  ];
+  private activities: ActivityLog[] = [];
+  public isInitialized = false;
 
+  // Initialize DB: Create tables and fetch data
+  async init() {
+    if (this.isInitialized) return;
+    
+    // 1. Try Loading from LocalStorage first (Fast load)
+    this.loadFromLocalStorage();
+
+    try {
+      if (!sql) throw new Error("Neon client not initialized");
+      
+      console.log('Connecting to Neon DB...');
+      
+      // 2. Create Schema (Idempotent)
+      await sql`CREATE TABLE IF NOT EXISTS shops (id TEXT PRIMARY KEY, name TEXT, type TEXT, color TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, shop_id TEXT, name TEXT, category TEXT, price NUMERIC, wholesale_price NUMERIC, stock INTEGER, description TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT, phone TEXT, type TEXT, shop_name TEXT, location TEXT, whatsapp TEXT, credit_limit NUMERIC, total_debt NUMERIC)`;
+      await sql`CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, customer_name TEXT, date TEXT, items JSONB, total_amount NUMERIC, paid_amount NUMERIC, balance NUMERIC, status TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, amount NUMERIC, date TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, description TEXT, amount NUMERIC, date TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS activities (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, date TEXT, action TEXT, description TEXT, performed_by TEXT, shop_name TEXT)`;
+
+      // 3. Fetch Data from DB
+      const shops = await sql`SELECT * FROM shops`;
+      
+      if (shops.length === 0) {
+        console.log('Database empty, seeding initial data...');
+        await this.seed();
+      } else {
+        console.log('Loading data from database...');
+        this.shops = shops as any;
+        
+        const products = await sql`SELECT * FROM products`;
+        this.products = products.map(p => ({
+          id: p.id,
+          shopId: p.shop_id,
+          name: p.name,
+          category: p.category,
+          price: Number(p.price),
+          wholesalePrice: Number(p.wholesale_price),
+          stock: Number(p.stock),
+          description: p.description
+        }));
+
+        const customers = await sql`SELECT * FROM customers`;
+        this.customers = customers.map(c => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone || '',
+          type: c.type as CustomerType,
+          shopName: c.shop_name,
+          location: c.location,
+          whatsapp: c.whatsapp,
+          creditLimit: Number(c.credit_limit),
+          totalDebt: Number(c.total_debt)
+        }));
+
+        const transactions = await sql`SELECT * FROM transactions`;
+        this.transactions = transactions.map(t => ({
+          id: t.id,
+          shopId: t.shop_id,
+          customerId: t.customer_id,
+          customerName: t.customer_name,
+          date: t.date,
+          // Handle items if they come back as string or object
+          items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items,
+          totalAmount: Number(t.total_amount),
+          paidAmount: Number(t.paid_amount),
+          balance: Number(t.balance),
+          status: t.status as any
+        }));
+
+        const payments = await sql`SELECT * FROM payments`;
+        this.payments = payments.map(p => ({
+          id: p.id,
+          shopId: p.shop_id,
+          customerId: p.customer_id,
+          amount: Number(p.amount),
+          date: p.date
+        }));
+
+        const expenses = await sql`SELECT * FROM expenses`;
+        this.expenses = expenses.map(e => ({
+          id: e.id,
+          shopId: e.shop_id,
+          customerId: e.customer_id,
+          description: e.description,
+          amount: Number(e.amount),
+          date: e.date
+        }));
+
+        const activities = await sql`SELECT * FROM activities`;
+        this.activities = activities.map(a => ({
+          id: a.id,
+          shopId: a.shop_id,
+          customerId: a.customer_id,
+          date: a.date,
+          action: a.action,
+          description: a.description,
+          performedBy: a.performed_by,
+          shopName: a.shop_name
+        }));
+      }
+      
+      // Sync DB data to local storage for next time
+      this.saveToLocalStorage();
+      this.isInitialized = true;
+      console.log('Database initialized successfully.');
+    } catch (e) {
+      console.error("CRITICAL DB ERROR:", e);
+      // Fallback to in-memory/localstorage only if DB fails completely
+      if (this.shops.length === 0) {
+        this.shops = INITIAL_SHOPS;
+        this.products = INITIAL_PRODUCTS;
+        this.customers = INITIAL_CUSTOMERS;
+        this.saveToLocalStorage();
+      }
+      this.isInitialized = true;
+    }
+  }
+
+  // --- LocalStorage Helpers ---
+  private saveToLocalStorage() {
+    try {
+      localStorage.setItem('crediflow_shops', JSON.stringify(this.shops));
+      localStorage.setItem('crediflow_products', JSON.stringify(this.products));
+      localStorage.setItem('crediflow_customers', JSON.stringify(this.customers));
+      localStorage.setItem('crediflow_transactions', JSON.stringify(this.transactions));
+      localStorage.setItem('crediflow_payments', JSON.stringify(this.payments));
+      localStorage.setItem('crediflow_expenses', JSON.stringify(this.expenses));
+      localStorage.setItem('crediflow_activities', JSON.stringify(this.activities));
+    } catch (e) { console.warn("LocalStorage Save Failed", e); }
+  }
+
+  private loadFromLocalStorage() {
+    try {
+      const s = localStorage.getItem('crediflow_shops');
+      if (s) this.shops = JSON.parse(s);
+      
+      const p = localStorage.getItem('crediflow_products');
+      if (p) this.products = JSON.parse(p);
+      
+      const c = localStorage.getItem('crediflow_customers');
+      if (c) this.customers = JSON.parse(c);
+
+      const t = localStorage.getItem('crediflow_transactions');
+      if (t) this.transactions = JSON.parse(t);
+
+      const py = localStorage.getItem('crediflow_payments');
+      if (py) this.payments = JSON.parse(py);
+
+      const ex = localStorage.getItem('crediflow_expenses');
+      if (ex) this.expenses = JSON.parse(ex);
+
+      const a = localStorage.getItem('crediflow_activities');
+      if (a) this.activities = JSON.parse(a);
+    } catch (e) { console.warn("LocalStorage Load Failed", e); }
+  }
+
+  async seed() {
+    this.shops = INITIAL_SHOPS;
+    this.products = INITIAL_PRODUCTS;
+    this.customers = INITIAL_CUSTOMERS;
+    this.saveToLocalStorage();
+
+    // Bulk insert initial data
+    try {
+      for (const s of INITIAL_SHOPS) {
+        await sql`INSERT INTO shops (id, name, type, color) VALUES (${s.id}, ${s.name}, ${s.type}, ${s.color})`;
+      }
+      for (const p of INITIAL_PRODUCTS) {
+        await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
+                  VALUES (${p.id}, ${p.shopId}, ${p.name}, ${p.category}, ${p.price}, ${p.wholesalePrice}, ${p.stock}, ${p.description || ''})`;
+      }
+      for (const c of INITIAL_CUSTOMERS) {
+        await sql`INSERT INTO customers (id, name, phone, type, shop_name, location, whatsapp, credit_limit, total_debt) 
+                  VALUES (${c.id}, ${c.name}, ${c.phone}, ${c.type}, ${c.shopName || ''}, ${c.location || ''}, ${c.whatsapp || ''}, ${c.creditLimit || 0}, ${c.totalDebt})`;
+      }
+    } catch (e) { console.error("Seed failed", e); }
+  }
+
+  // --- READS (Synchronous from Cache) ---
   getShops() { return this.shops; }
 
-  // Filter products by shop
   getProducts(shopId?: string) { 
     if (!shopId) return this.products;
     return this.products.filter(p => p.shopId === shopId); 
   }
   
-  // Customers are global in this architecture, but debt calculation might be specific later.
-  // For now, we return all customers so any shop can sell to any customer.
   getCustomers() { return this.customers; }
   
   getTransactions(shopId?: string) { 
@@ -111,12 +267,13 @@ class MockDbService {
     if (shopId) {
       filtered = this.activities.filter(a => a.shopId === shopId);
     }
-    return filtered.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
+    return filtered.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
   }
 
   getActivitiesByCustomer(customerId: string) {
     return this.activities
       .filter(a => a.customerId === customerId)
+      .slice()
       .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
@@ -132,8 +289,10 @@ class MockDbService {
     return this.expenses.filter(e => e.customerId === customerId);
   }
 
-  private log(action: string, description: string, user?: User, shopId?: string, customerId?: string) {
-    this.activities.unshift({
+  // --- WRITES (Async Persistence with Optimistic UI) ---
+
+  private async log(action: string, description: string, user?: User, shopId?: string, customerId?: string) {
+    const logEntry: ActivityLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       shopId,
       customerId,
@@ -142,51 +301,83 @@ class MockDbService {
       description,
       performedBy: user ? user.username : 'Unknown',
       shopName: user?.shopName
-    });
+    };
+    
+    this.activities.unshift(logEntry); // Optimistic
+    this.saveToLocalStorage();
+
+    if (sql) {
+      try {
+        await sql`INSERT INTO activities (id, shop_id, customer_id, date, action, description, performed_by, shop_name)
+                  VALUES (${logEntry.id}, ${logEntry.shopId || null}, ${logEntry.customerId || null}, ${logEntry.date}, ${logEntry.action}, ${logEntry.description}, ${logEntry.performedBy}, ${logEntry.shopName || null})`;
+      } catch (e) { console.error("Log Error", e); }
+    }
   }
 
-  addProduct(product: Product, user?: User) {
-    this.products = [...this.products, product];
+  async addProduct(product: Product, user?: User) {
+    this.products.push(product); // Optimistic
+    this.saveToLocalStorage();
     this.log('ADD_PRODUCT', `Added product: ${product.name}`, user, product.shopId);
+
+    if (sql) {
+      await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
+                VALUES (${product.id}, ${product.shopId}, ${product.name}, ${product.category}, ${product.price}, ${product.wholesalePrice}, ${product.stock}, ${product.description || ''})`;
+    }
   }
 
-  updateProduct(productId: string, updates: Partial<Product>, user?: User, reason?: string) {
+  async updateProduct(productId: string, updates: Partial<Product>, user?: User, reason?: string) {
     const index = this.products.findIndex(p => p.id === productId);
     if (index > -1) {
       const oldData = this.products[index];
-      this.products[index] = { ...oldData, ...updates };
+      const newData = { ...oldData, ...updates };
+      this.products[index] = newData; // Optimistic
+      this.saveToLocalStorage();
       
       const changes = Object.keys(updates).join(', ');
       const reasonText = reason ? ` | Note: ${reason}` : '';
       this.log('UPDATE_PRODUCT', `Updated ${oldData.name} [${changes}]${reasonText}`, user, oldData.shopId);
-    } else {
-        throw new Error("Product not found");
+
+      if (sql) {
+        if (updates.stock !== undefined) await sql`UPDATE products SET stock = ${updates.stock} WHERE id = ${productId}`;
+        if (updates.price !== undefined) await sql`UPDATE products SET price = ${updates.price} WHERE id = ${productId}`;
+        if (updates.wholesalePrice !== undefined) await sql`UPDATE products SET wholesale_price = ${updates.wholesalePrice} WHERE id = ${productId}`;
+        if (updates.name !== undefined) await sql`UPDATE products SET name = ${updates.name} WHERE id = ${productId}`;
+        if (updates.category !== undefined) await sql`UPDATE products SET category = ${updates.category} WHERE id = ${productId}`;
+        if (updates.description !== undefined) await sql`UPDATE products SET description = ${updates.description} WHERE id = ${productId}`;
+      }
     }
   }
 
-  addProducts(products: Product[], user?: User) {
-    this.products = [...this.products, ...products];
+  async addProducts(products: Product[], user?: User) {
+    this.products = [...this.products, ...products]; // Optimistic
+    this.saveToLocalStorage();
     const shopId = products[0]?.shopId;
     this.log('IMPORT_CSV', `Imported ${products.length} products via CSV`, user, shopId);
+
+    if (sql) {
+      for (const p of products) {
+          await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
+                  VALUES (${p.id}, ${p.shopId}, ${p.name}, ${p.category}, ${p.price}, ${p.wholesalePrice}, ${p.stock}, ${p.description || ''})`;
+      }
+    }
   }
 
-  transferProduct(productName: string, fromShopId: string, toShopId: string, quantity: number, user?: User) {
+  async transferProduct(productName: string, fromShopId: string, toShopId: string, quantity: number, user?: User) {
     const sourceIndex = this.products.findIndex(p => p.shopId === fromShopId && p.name === productName);
-    if (sourceIndex === -1) {
-      throw new Error("Product not found in source shop");
-    }
-    
-    if (this.products[sourceIndex].stock < quantity) {
-      throw new Error("Insufficient stock");
-    }
+    if (sourceIndex === -1) throw new Error("Product not found in source shop");
+    if (this.products[sourceIndex].stock < quantity) throw new Error("Insufficient stock");
 
     // Deduct
     this.products[sourceIndex].stock -= quantity;
+    if (sql) await sql`UPDATE products SET stock = ${this.products[sourceIndex].stock} WHERE id = ${this.products[sourceIndex].id}`;
 
     // Add to dest
     const destIndex = this.products.findIndex(p => p.shopId === toShopId && p.name === productName);
+    let toShopName = '';
+    
     if (destIndex > -1) {
       this.products[destIndex].stock += quantity;
+      if (sql) await sql`UPDATE products SET stock = ${this.products[destIndex].stock} WHERE id = ${this.products[destIndex].id}`;
     } else {
       const newProduct = {
         ...this.products[sourceIndex],
@@ -195,49 +386,84 @@ class MockDbService {
         stock: quantity
       };
       this.products.push(newProduct);
+      if (sql) {
+        await sql`INSERT INTO products (id, shop_id, name, category, price, wholesale_price, stock, description) 
+                VALUES (${newProduct.id}, ${newProduct.shopId}, ${newProduct.name}, ${newProduct.category}, ${newProduct.price}, ${newProduct.wholesalePrice}, ${newProduct.stock}, ${newProduct.description || ''})`;
+      }
     }
+    
+    this.saveToLocalStorage();
 
-    const toShopName = this.shops.find(s => s.id === toShopId)?.name;
+    const shop = this.shops.find(s => s.id === toShopId);
+    toShopName = shop ? shop.name : 'Unknown';
     this.log('STOCK_TRANSFER', `Transferred ${quantity}x ${productName} to ${toShopName}`, user, fromShopId);
   }
 
-  addCustomer(customer: Customer, user?: User) {
-    this.customers = [...this.customers, customer];
+  async addCustomer(customer: Customer, user?: User) {
+    this.customers.push(customer); // Optimistic
+    this.saveToLocalStorage();
     this.log('ADD_CUSTOMER', `Created new customer: ${customer.name}`, user, undefined, customer.id);
-  }
 
-  updateCustomer(id: string, updates: Partial<Customer>, user?: User) {
-    const index = this.customers.findIndex(c => c.id === id);
-    if (index > -1) {
-      const oldData = this.customers[index];
-      this.customers[index] = { ...oldData, ...updates };
-      
-      const changes = Object.keys(updates).join(', ');
-      this.log('UPDATE_CUSTOMER', `Updated ${oldData.name} (Fields: ${changes})`, user, undefined, id);
+    if (sql) {
+      await sql`INSERT INTO customers (id, name, phone, type, shop_name, location, whatsapp, credit_limit, total_debt) 
+                VALUES (${customer.id}, ${customer.name}, ${customer.phone}, ${customer.type}, ${customer.shopName || ''}, ${customer.location || ''}, ${customer.whatsapp || ''}, ${customer.creditLimit || 0}, ${customer.totalDebt})`;
     }
   }
 
-  createTransaction(transaction: Transaction, user?: User) {
-    this.transactions = [transaction, ...this.transactions];
+  async updateCustomer(id: string, updates: Partial<Customer>, user?: User) {
+    const index = this.customers.findIndex(c => c.id === id);
+    if (index > -1) {
+      const oldData = this.customers[index];
+      this.customers[index] = { ...oldData, ...updates }; // Optimistic
+      this.saveToLocalStorage();
+      
+      const changes = Object.keys(updates).join(', ');
+      this.log('UPDATE_CUSTOMER', `Updated ${oldData.name} (Fields: ${changes})`, user, undefined, id);
+
+      // Execute SQL update for changed fields
+      if (sql) {
+        if (updates.name) await sql`UPDATE customers SET name = ${updates.name} WHERE id = ${id}`;
+        if (updates.phone) await sql`UPDATE customers SET phone = ${updates.phone} WHERE id = ${id}`;
+        if (updates.shopName !== undefined) await sql`UPDATE customers SET shop_name = ${updates.shopName} WHERE id = ${id}`;
+        if (updates.location !== undefined) await sql`UPDATE customers SET location = ${updates.location} WHERE id = ${id}`;
+        if (updates.whatsapp !== undefined) await sql`UPDATE customers SET whatsapp = ${updates.whatsapp} WHERE id = ${id}`;
+        if (updates.creditLimit !== undefined) await sql`UPDATE customers SET credit_limit = ${updates.creditLimit} WHERE id = ${id}`;
+        if (updates.totalDebt !== undefined) await sql`UPDATE customers SET total_debt = ${updates.totalDebt} WHERE id = ${id}`;
+      }
+    }
+  }
+
+  async createTransaction(transaction: Transaction, user?: User) {
+    this.transactions = [transaction, ...this.transactions]; // Optimistic
     
-    transaction.items.forEach(item => {
+    // Update stock
+    for (const item of transaction.items) {
       const prodIndex = this.products.findIndex(p => p.id === item.productId);
       if (prodIndex > -1) {
         this.products[prodIndex].stock -= item.quantity;
+        if (sql) await sql`UPDATE products SET stock = ${this.products[prodIndex].stock} WHERE id = ${item.productId}`;
       }
-    });
+    }
 
+    // Update Customer Debt
     if (transaction.balance > 0) {
       const custIndex = this.customers.findIndex(c => c.id === transaction.customerId);
       if (custIndex > -1) {
         this.customers[custIndex].totalDebt += transaction.balance;
+        if (sql) await sql`UPDATE customers SET total_debt = ${this.customers[custIndex].totalDebt} WHERE id = ${transaction.customerId}`;
       }
     }
 
+    this.saveToLocalStorage();
     this.log('SALE', `New Invoice #${transaction.id.slice(-4)} for ${transaction.customerName} (Rs. ${transaction.totalAmount})`, user, transaction.shopId, transaction.customerId);
+
+    if (sql) {
+      await sql`INSERT INTO transactions (id, shop_id, customer_id, customer_name, date, items, total_amount, paid_amount, balance, status)
+                VALUES (${transaction.id}, ${transaction.shopId}, ${transaction.customerId}, ${transaction.customerName}, ${transaction.date}, ${JSON.stringify(transaction.items)}::jsonb, ${transaction.totalAmount}, ${transaction.paidAmount}, ${transaction.balance}, ${transaction.status})`;
+    }
   }
 
-  recordPayment(customerId: string, amount: number, user?: User, shopId?: string) {
+  async recordPayment(customerId: string, amount: number, user?: User, shopId?: string) {
     const custIndex = this.customers.findIndex(c => c.id === customerId);
     if (custIndex > -1) {
       this.customers[custIndex].totalDebt -= amount;
@@ -251,15 +477,22 @@ class MockDbService {
         date: new Date().toISOString()
       };
       this.payments.push(payment);
+      this.saveToLocalStorage();
       
       this.log('PAYMENT', `Received payment of Rs. ${amount} from ${this.customers[custIndex].name}`, user, shopId, customerId);
+
+      // Async DB Updates
+      if (sql) {
+        await sql`UPDATE customers SET total_debt = ${this.customers[custIndex].totalDebt} WHERE id = ${customerId}`;
+        await sql`INSERT INTO payments (id, shop_id, customer_id, amount, date) 
+                  VALUES (${payment.id}, ${payment.shopId}, ${payment.customerId}, ${payment.amount}, ${payment.date})`;
+      }
     }
   }
 
-  recordExpense(customerId: string, description: string, amount: number, date: string, user?: User, shopId?: string) {
+  async recordExpense(customerId: string, description: string, amount: number, date: string, user?: User, shopId?: string) {
     const custIndex = this.customers.findIndex(c => c.id === customerId);
     if (custIndex > -1) {
-      // Expenses typically increase the balance due if they are chargeable to the customer
       this.customers[custIndex].totalDebt += amount;
       
       const expense: ExpenseRecord = {
@@ -271,8 +504,16 @@ class MockDbService {
         date
       };
       this.expenses.push(expense);
+      this.saveToLocalStorage();
 
       this.log('EXPENSE', `Added expense: ${description} (Rs. ${amount})`, user, shopId, customerId);
+
+      // Async DB Updates
+      if (sql) {
+        await sql`UPDATE customers SET total_debt = ${this.customers[custIndex].totalDebt} WHERE id = ${customerId}`;
+        await sql`INSERT INTO expenses (id, shop_id, customer_id, description, amount, date) 
+                  VALUES (${expense.id}, ${expense.shopId}, ${expense.customerId}, ${expense.description}, ${expense.amount}, ${expense.date})`;
+      }
     }
   }
 }
@@ -287,7 +528,6 @@ export const authenticate = (username: string, password: string): User | null =>
 };
 
 export const authenticateShop = (shopId: string, password: string): User | null => {
-  // Simple password check for prototype
   if (password === '1234') {
     const shop = db.getShops().find(s => s.id === shopId);
     if (shop) {

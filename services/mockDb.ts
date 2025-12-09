@@ -7,7 +7,7 @@ import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role
 // =========================================================================================
 // We now support dynamic configuration via the UI. 
 // If you prefer hardcoding it, paste it here, otherwise leave empty to use the UI.
-const HARDCODED_DB_URL = ''; 
+const HARDCODED_DB_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require'; 
 
 // Helper to clean the connection string for browser compatibility
 const getSafeUrl = (url: string) => {
@@ -16,8 +16,8 @@ const getSafeUrl = (url: string) => {
   
   // Strict validation: Must start with postgres:// or postgresql://
   // This prevents the app from crashing if someone pastes a dashboard URL or random text
-  if (!cleanUrl.startsWith('postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require') && !cleanUrl.startsWith('postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require')) {
-    console.warn("postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
+  if (!cleanUrl.startsWith('postgres://') && !cleanUrl.startsWith('postgresql://')) {
+    console.warn("Invalid Database URL format. URL must start with 'postgres://'. Ignoring provided URL.");
     return '';
   }
 

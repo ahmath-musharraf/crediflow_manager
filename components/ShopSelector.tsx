@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shop, User, Role } from '../types';
 import { db, authenticate, authenticateShop } from '../services/mockDb';
 
@@ -13,10 +13,19 @@ const ShopSelector: React.FC<ShopSelectorProps> = ({ onLoginSuccess, isSelection
   const shops = db.getShops();
   const [showShopLogin, setShowShopLogin] = useState<string | null>(null); // shopId
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showDbSetup, setShowDbSetup] = useState(false);
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  
+  const [dbUrl, setDbUrl] = useState('');
+
+  useEffect(() => {
+    if (showDbSetup) {
+      setDbUrl(db.getDatabaseUrl());
+    }
+  }, [showDbSetup]);
 
   const handleShopClick = (shop: Shop) => {
     if (isSelectionMode) {
@@ -61,6 +70,12 @@ const ShopSelector: React.FC<ShopSelectorProps> = ({ onLoginSuccess, isSelection
     }
   };
 
+  const handleSaveDb = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dbUrl.trim()) return;
+    db.setDatabaseUrl(dbUrl.trim());
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 animate-fade-in relative">
       
@@ -74,15 +89,23 @@ const ShopSelector: React.FC<ShopSelectorProps> = ({ onLoginSuccess, isSelection
         </button>
       )}
 
-      {/* Super Admin Login Button (Only in Login Mode) */}
-      {!isSelectionMode && (
+      {/* Top Right Controls */}
+      <div className="absolute top-6 right-6 flex items-center gap-3 z-10">
+        {!isSelectionMode && (
+          <button 
+            onClick={handleAdminClick}
+            className="flex items-center gap-2 px-4 py-2 text-white bg-slate-800 rounded-lg shadow-sm hover:bg-slate-900 transition-all font-medium text-sm"
+          >
+            <span>🔐</span> Super Admin
+          </button>
+        )}
         <button 
-          onClick={handleAdminClick}
-          className="absolute top-6 right-6 flex items-center gap-2 px-4 py-2 text-white bg-slate-800 rounded-lg shadow-sm hover:bg-slate-900 transition-all font-medium z-10 text-sm"
-        >
-          <span>🔐</span> Super Admin Login
+            onClick={() => setShowDbSetup(true)}
+            className="flex items-center gap-2 px-3 py-2 text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg shadow-sm hover:bg-indigo-100 transition-all font-medium text-sm"
+          >
+            <span>⚙️</span> Setup Database
         </button>
-      )}
+      </div>
 
       <div className="text-center mb-10 mt-12 md:mt-0">
         <h1 className="text-4xl font-bold text-gray-800 mb-2">CrediFlow Manager</h1>
@@ -183,6 +206,42 @@ const ShopSelector: React.FC<ShopSelectorProps> = ({ onLoginSuccess, isSelection
               </div>
               {error && <p className="text-red-500 text-xs text-center font-medium">{error}</p>}
               <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg shadow-lg">Login as Owner</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DB Setup Modal */}
+      {showDbSetup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl w-[500px] animate-fade-in relative">
+            <button onClick={() => setShowDbSetup(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            <div className="text-center mb-6">
+               <h3 className="text-2xl font-bold text-gray-800">Database Connection</h3>
+               <p className="text-sm text-gray-500">Connect to Neon Postgres</p>
+            </div>
+            <form onSubmit={handleSaveDb} className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700 space-y-2">
+                 <p>To connect your database:</p>
+                 <ol className="list-decimal pl-5 space-y-1">
+                    <li>Open your <a href="https://console.neon.tech/app/projects/lucky-bread-76543471/branches/br-round-bar-a49o1jv1" target="_blank" rel="noopener noreferrer" className="font-bold underline text-blue-800 hover:text-blue-900">Neon Dashboard</a>.</li>
+                    <li>Look for <strong>Connection Details</strong>.</li>
+                    <li>Copy the string starting with <code>postgres://...</code></li>
+                 </ol>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Connection String (DATABASE_URL)</label>
+                <textarea 
+                  value={dbUrl}
+                  onChange={(e) => setDbUrl(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono h-24 resize-none"
+                  placeholder="postgresql://user:pass@ep-host.neon.tech/dbname?sslmode=require"
+                  autoFocus
+                />
+              </div>
+              <button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2">
+                <span>🔗</span> Save & Connect
+              </button>
             </form>
           </div>
         </div>

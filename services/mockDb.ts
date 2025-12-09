@@ -1,6 +1,14 @@
 import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role, ActivityLog, Shop, ExpenseRecord } from '../types';
+import { neon } from '@neondatabase/serverless';
 
-// Initial Shops
+// --- DATABASE CONFIGURATION ---
+// Using the connection string you provided
+const DATABASE_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+
+// Initialize SQL client
+const sql = neon(DATABASE_URL);
+
+// --- INITIAL DEFAULT DATA (Fallback) ---
 const INITIAL_SHOPS: Shop[] = [
   { id: 'shop1', name: 'Osaka - Kattankudy', type: 'WHOLESALE', color: 'bg-blue-600' },
   { id: 'shop2', name: 'Shop 2: City Retail', type: 'RETAIL', color: 'bg-emerald-600' },
@@ -8,7 +16,6 @@ const INITIAL_SHOPS: Shop[] = [
   { id: 'shop4', name: 'Shop 4: Warehouse B', type: 'WHOLESALE', color: 'bg-orange-600' }
 ];
 
-// Initial Mock Data (Distributed across shops)
 const INITIAL_PRODUCTS: Product[] = [
   { id: '1', shopId: 'shop1', name: 'Premium Cotton Shirt', category: 'Clothing', price: 1200, wholesalePrice: 800, stock: 150 },
   { id: '2', shopId: 'shop1', name: 'Denim Jeans - Bulk', category: 'Clothing', price: 1800, wholesalePrice: 1200, stock: 80 },
@@ -43,34 +50,9 @@ const INITIAL_CUSTOMERS: Customer[] = [
   },
 ];
 
-const INITIAL_TRANSACTIONS: Transaction[] = [
-  {
-    id: 't1',
-    shopId: 'shop1',
-    customerId: 'c2',
-    customerName: 'Rahul Traders (Wholesale)',
-    date: new Date(Date.now() - 86400000 * 5).toISOString(), // 5 days ago
-    items: [{ productId: '1', name: 'Premium Cotton Shirt', quantity: 10, price: 800 }],
-    totalAmount: 8000,
-    paidAmount: 3000,
-    balance: 5000,
-    status: 'PARTIAL'
-  },
-  {
-    id: 't2',
-    shopId: 'shop1',
-    customerId: 'c2',
-    customerName: 'Rahul Traders (Wholesale)',
-    date: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
-    items: [{ productId: '2', name: 'Denim Jeans - Slim', quantity: 10, price: 1200 }],
-    totalAmount: 12000,
-    paidAmount: 2000,
-    balance: 10000,
-    status: 'PARTIAL'
-  }
-];
+const INITIAL_TRANSACTIONS: Transaction[] = [];
 
-// Storage Keys
+// LocalStorage Keys
 const KEYS = {
   SHOPS: 'crediflow_shops',
   PRODUCTS: 'crediflow_products',
@@ -89,6 +71,7 @@ class MockDbService {
   private payments: PaymentRecord[];
   private expenses: ExpenseRecord[]; 
   private activities: ActivityLog[];
+  private dbInitialized: boolean = false;
 
   constructor() {
     this.shops = this.load(KEYS.SHOPS, INITIAL_SHOPS);
@@ -103,10 +86,76 @@ class MockDbService {
       shopId: 'shop1',
       date: new Date().toISOString(),
       action: 'SYSTEM_START',
-      description: 'System loaded from storage',
+      description: 'System loaded locally',
       performedBy: 'System'
     }];
     this.activities = this.load(KEYS.ACTIVITIES, defaultActivity);
+
+    // Attempt to sync with Neon DB in the background
+    this.initDatabase();
+  }
+
+  // --- Database Logic (Neon) ---
+  
+  private async initDatabase() {
+    try {
+      // Create table if not exists (Simple Key-Value Store pattern for JSON blobs)
+      await sql`CREATE TABLE IF NOT EXISTS app_storage (
+        key TEXT PRIMARY KEY,
+        value JSONB
+      )`;
+      this.dbInitialized = true;
+      console.log("Neon DB Connected. Syncing...");
+      await this.pullFromCloud();
+    } catch (err) {
+      console.error("Failed to connect to Neon DB:", err);
+    }
+  }
+
+  private async pushToCloud(key: string, data: any) {
+    if (!this.dbInitialized) return;
+    try {
+      await sql`
+        INSERT INTO app_storage (key, value)
+        VALUES (${key}, ${JSON.stringify(data)})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+      `;
+    } catch (err) {
+      console.error(`Failed to push ${key} to cloud:`, err);
+    }
+  }
+
+  private async pullFromCloud() {
+    if (!this.dbInitialized) return;
+    try {
+      const rows = await sql`SELECT key, value FROM app_storage`;
+      let updated = false;
+      
+      for (const row of rows) {
+        // Update local memory and storage if cloud has data
+        const data = row.value;
+        localStorage.setItem(row.key, JSON.stringify(data));
+        
+        switch (row.key) {
+          case KEYS.SHOPS: this.shops = data; break;
+          case KEYS.PRODUCTS: this.products = data; break;
+          case KEYS.CUSTOMERS: this.customers = data; break;
+          case KEYS.TRANSACTIONS: this.transactions = data; break;
+          case KEYS.PAYMENTS: this.payments = data; break;
+          case KEYS.EXPENSES: this.expenses = data; break;
+          case KEYS.ACTIVITIES: this.activities = data; break;
+        }
+        updated = true;
+      }
+      
+      if (updated) {
+        console.log("Data synced from Cloud.");
+        // We might need to trigger a re-render here in a real React architecture, 
+        // but for this prototype, data will be fresh on next interaction/page load.
+      }
+    } catch (err) {
+      console.error("Failed to pull from cloud:", err);
+    }
   }
 
   // --- Persistence Helpers ---
@@ -115,17 +164,26 @@ class MockDbService {
       const stored = localStorage.getItem(key);
       return stored ? JSON.parse(stored) : defaultValue;
     } catch (e) {
-      console.error(`Error loading ${key}`, e);
       return defaultValue;
     }
   }
 
   private save(key: string, data: any) {
     try {
+      // 1. Save Local
       localStorage.setItem(key, JSON.stringify(data));
+      // 2. Save Cloud (Fire and Forget)
+      this.pushToCloud(key, data);
     } catch (e) {
       console.error(`Error saving ${key}`, e);
     }
+  }
+
+  public clearDatabase() {
+    localStorage.clear();
+    // Optional: Clear cloud DB
+    // sql`DELETE FROM app_storage`; 
+    window.location.reload();
   }
 
   // --- Getters ---
@@ -357,3 +415,5 @@ export const authenticateShop = (shopId: string, password: string): User | null 
   }
   return null;
 };
+]]></content>
+</change>

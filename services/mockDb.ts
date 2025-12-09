@@ -16,7 +16,7 @@ const getSafeUrl = (url: string) => {
   
   // Strict validation: Must start with postgres:// or postgresql://
   // This prevents the app from crashing if someone pastes a dashboard URL or random text
-  if (!cleanUrl.startsWith('postgres://') && !cleanUrl.startsWith('postgresql://')) {
+  if (!cleanUrl.startsWith('postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require') && !cleanUrl.startsWith('postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require')) {
     console.warn("postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
     return '';
   }

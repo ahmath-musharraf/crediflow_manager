@@ -1,17 +1,36 @@
+
 import { neon } from '@neondatabase/serverless';
 import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role, ActivityLog, Shop, ExpenseRecord } from '../types';
 
-// Connect to Neon Database
-// We remove channel_binding for browser compatibility
-const DATABASE_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+// =========================================================================================
+// 🔧 DATABASE CONFIGURATION
+// =========================================================================================
+// PASTE YOUR NEON DATABASE URL HERE
+// You can get this from the Neon Dashboard (https://console.neon.tech)
+const RAW_DB_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+
+// Helper to clean the connection string for browser compatibility
+// (Removes 'channel_binding' which causes errors in some browsers)
+const getSafeUrl = (url: string) => {
+  if (!url) return '';
+  // Remove channel_binding parameter if present
+  return url.replace(/&channel_binding=[^&]*/g, '').replace(/\?channel_binding=[^&]*&?/g, '?');
+};
+
+const DATABASE_URL = getSafeUrl(RAW_DB_URL);
+// =========================================================================================
 
 // Initialize neon client safely
 let sql: any;
 try {
-  sql = neon(DATABASE_URL);
+  if (DATABASE_URL) {
+    sql = neon(DATABASE_URL);
+  } else {
+    console.warn("No DATABASE_URL provided. Running in offline mode.");
+    sql = null;
+  }
 } catch (e) {
   console.error("Failed to initialize Neon client:", e);
-  // Fallback to null so we can handle it in init()
   sql = null;
 }
 
@@ -100,7 +119,7 @@ class MockDbService {
         this.shops = shops as any;
         
         const products = await sql`SELECT * FROM products`;
-        this.products = products.map(p => ({
+        this.products = products.map((p: any) => ({
           id: p.id,
           shopId: p.shop_id,
           name: p.name,
@@ -112,7 +131,7 @@ class MockDbService {
         }));
 
         const customers = await sql`SELECT * FROM customers`;
-        this.customers = customers.map(c => ({
+        this.customers = customers.map((c: any) => ({
           id: c.id,
           name: c.name,
           phone: c.phone || '',
@@ -125,7 +144,7 @@ class MockDbService {
         }));
 
         const transactions = await sql`SELECT * FROM transactions`;
-        this.transactions = transactions.map(t => ({
+        this.transactions = transactions.map((t: any) => ({
           id: t.id,
           shopId: t.shop_id,
           customerId: t.customer_id,
@@ -140,7 +159,7 @@ class MockDbService {
         }));
 
         const payments = await sql`SELECT * FROM payments`;
-        this.payments = payments.map(p => ({
+        this.payments = payments.map((p: any) => ({
           id: p.id,
           shopId: p.shop_id,
           customerId: p.customer_id,
@@ -149,7 +168,7 @@ class MockDbService {
         }));
 
         const expenses = await sql`SELECT * FROM expenses`;
-        this.expenses = expenses.map(e => ({
+        this.expenses = expenses.map((e: any) => ({
           id: e.id,
           shopId: e.shop_id,
           customerId: e.customer_id,
@@ -159,7 +178,7 @@ class MockDbService {
         }));
 
         const activities = await sql`SELECT * FROM activities`;
-        this.activities = activities.map(a => ({
+        this.activities = activities.map((a: any) => ({
           id: a.id,
           shopId: a.shop_id,
           customerId: a.customer_id,

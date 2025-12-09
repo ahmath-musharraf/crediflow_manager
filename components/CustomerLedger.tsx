@@ -54,9 +54,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
   const [whatsAppMessage, setWhatsAppMessage] = useState('');
   const [whatsAppNumber, setWhatsAppNumber] = useState('');
 
-  const [editPhone, setEditPhone] = useState('');
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
-
   // New Customer Form State
   const [newCustomer, setNewCustomer] = useState({
     name: '',
@@ -94,9 +91,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
   const loadCustomerData = (custId: string, customerList = customers) => {
     const cust = customerList.find(c => c.id === custId);
     if (cust) {
-      setEditPhone(cust.phone);
-      setSaveStatus('idle');
-      
       const transactions = db.getTransactionsByCustomer(custId);
       const payments = db.getPaymentsByCustomer(custId);
       const expenses = db.getExpensesByCustomer(custId);
@@ -187,7 +181,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
       });
 
       // Sort Chronologically (Oldest First)
-      // If timestamps are identical (e.g. Sale & Down Payment), ensure SALE comes before PAYMENT
       items.sort((a, b) => {
         const timeA = new Date(a.date).getTime();
         const timeB = new Date(b.date).getTime();
@@ -297,7 +290,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
       .map(([shopId, amount]) => `📍 *${getShopName(shopId)}:* Rs. ${amount.toLocaleString()}`)
       .join('\n');
 
-    // Use \n for line breaks so textarea displays them correctly
     const messageText = `👋 Hello *${cust.name}*,\n\n` +
       `This is a friendly reminder from *CrediFlow Group* regarding your account status. 🧾\n\n` +
       `💰 *Total Outstanding: Rs. ${cust.totalDebt.toLocaleString()}*\n\n` +
@@ -334,16 +326,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
       loadCustomerData(selectedCustId, updatedCustomers);
       setShowExpenseModal(false);
       setExpenseForm({ description: '', amount: '', date: new Date().toISOString().split('T')[0] });
-    }
-  };
-
-  const handleSavePhone = () => {
-    if (selectedCustId) {
-      db.updateCustomer(selectedCustId, { phone: editPhone }, user); 
-      const updatedList = db.getCustomers().filter(c => c.type === CustomerType.WHOLESALE);
-      setCustomers(updatedList);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 

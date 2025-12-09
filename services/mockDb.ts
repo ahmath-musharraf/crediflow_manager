@@ -1,3 +1,4 @@
+
 import { neon } from '@neondatabase/serverless';
 import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role, ActivityLog, Shop, ExpenseRecord } from '../types';
 
@@ -238,7 +239,6 @@ class MockDbService {
     } catch (e) {
       console.error("CRITICAL DB ERROR - Using LocalStorage fallback:", e);
       this.usingPostgres = false;
-      // Alert user silently via console, but don't crash app
     } finally {
       this.finalizeInit();
     }
@@ -363,7 +363,6 @@ class MockDbService {
         // Simplified SQL update for demo
         const entries = Object.entries(updates);
         if (entries.length > 0) {
-            // Note: In a real app, you'd construct the dynamic query better. Here we just try individual updates for safety in mock.
             if (updates.stock !== undefined) await sql`UPDATE products SET stock = ${updates.stock} WHERE id = ${productId}`;
             if (updates.price !== undefined) await sql`UPDATE products SET price = ${updates.price} WHERE id = ${productId}`;
             if (updates.wholesalePrice !== undefined) await sql`UPDATE products SET wholesale_price = ${updates.wholesalePrice} WHERE id = ${productId}`;

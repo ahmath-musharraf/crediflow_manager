@@ -5,34 +5,50 @@ import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role
 // =========================================================================================
 // 🔧 DATABASE CONFIGURATION
 // =========================================================================================
-// PASTE YOUR NEON DATABASE URL HERE
-// You can get this from the Neon Dashboard (https://console.neon.tech)
-const RAW_DB_URL = 'https://console.neon.tech/app/projects/lucky-bread-76543471/branches/br-round-bar-a49o1jv1';
+// We now support dynamic configuration via the UI. 
+// If you prefer hardcoding it, paste it here, otherwise leave empty to use the UI.
+const HARDCODED_DB_URL = ''; 
 
 // Helper to clean the connection string for browser compatibility
-// (Removes 'channel_binding' which causes errors in some browsers)
 const getSafeUrl = (url: string) => {
   if (!url) return '';
-  // Remove channel_binding parameter if present
   return url.replace(/&channel_binding=[^&]*/g, '').replace(/\?channel_binding=[^&]*&?/g, '?');
 };
 
-const DATABASE_URL = getSafeUrl(RAW_DB_URL);
-// =========================================================================================
+const getEffectiveDbUrl = () => {
+  // 1. Check Hardcoded
+  if (HARDCODED_DB_URL) return getSafeUrl(HARDCODED_DB_URL);
+  
+  // 2. Check LocalStorage (User entered via UI)
+  try {
+    const stored = localStorage.getItem('crediflow_db_url');
+    if (stored) return getSafeUrl(stored);
+  } catch (e) { return ''; }
+  
+  return '';
+};
 
 // Initialize neon client safely
-let sql: any;
-try {
-  if (DATABASE_URL) {
-    sql = neon(DATABASE_URL);
-  } else {
-    console.warn("No DATABASE_URL provided. Running in offline mode.");
+let sql: any = null;
+
+const initSqlClient = () => {
+  const url = getEffectiveDbUrl();
+  try {
+    if (url) {
+      console.log("Initializing Neon Client...");
+      sql = neon(url);
+      return true;
+    } else {
+      console.warn("No DATABASE_URL provided. Running in offline mode.");
+      sql = null;
+      return false;
+    }
+  } catch (e) {
+    console.error("Failed to initialize Neon client:", e);
     sql = null;
+    return false;
   }
-} catch (e) {
-  console.error("Failed to initialize Neon client:", e);
-  sql = null;
-}
+};
 
 // Initial Mock Data (Used for seeding DB if empty)
 const INITIAL_SHOPS: Shop[] = [
@@ -87,6 +103,16 @@ class MockDbService {
   public isInitialized = false;
   public usingPostgres = false;
 
+  // Set DB URL dynamically and reload
+  public setDatabaseUrl(url: string) {
+    localStorage.setItem('crediflow_db_url', url);
+    window.location.reload();
+  }
+
+  public getDatabaseUrl() {
+    return getEffectiveDbUrl();
+  }
+
   // Initialize DB: Create tables and fetch data
   async init() {
     if (this.isInitialized) return;
@@ -94,12 +120,26 @@ class MockDbService {
     // 1. Try Loading from LocalStorage first (Fast load)
     this.loadFromLocalStorage();
 
+    // 2. Initialize SQL
+    const hasSql = initSqlClient();
+
+    if (!hasSql) {
+       this.usingPostgres = false;
+       this.isInitialized = true;
+       if (this.shops.length === 0) {
+        this.shops = INITIAL_SHOPS;
+        this.products = INITIAL_PRODUCTS;
+        this.customers = INITIAL_CUSTOMERS;
+       }
+       return;
+    }
+
     try {
       if (!sql) throw new Error("Neon client not initialized");
       
       console.log('Connecting to Neon DB...');
       
-      // 2. Create Schema (Idempotent)
+      // 3. Create Schema (Idempotent)
       await sql`CREATE TABLE IF NOT EXISTS shops (id TEXT PRIMARY KEY, name TEXT, type TEXT, color TEXT)`;
       await sql`CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, shop_id TEXT, name TEXT, category TEXT, price NUMERIC, wholesale_price NUMERIC, stock INTEGER, description TEXT)`;
       await sql`CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT, phone TEXT, type TEXT, shop_name TEXT, location TEXT, whatsapp TEXT, credit_limit NUMERIC, total_debt NUMERIC)`;
@@ -108,7 +148,7 @@ class MockDbService {
       await sql`CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, description TEXT, amount NUMERIC, date TEXT)`;
       await sql`CREATE TABLE IF NOT EXISTS activities (id TEXT PRIMARY KEY, shop_id TEXT, customer_id TEXT, date TEXT, action TEXT, description TEXT, performed_by TEXT, shop_name TEXT)`;
 
-      // 3. Fetch Data from DB
+      // 4. Fetch Data from DB
       const shops = await sql`SELECT * FROM shops`;
       
       if (shops.length === 0) {
@@ -150,7 +190,6 @@ class MockDbService {
           customerId: t.customer_id,
           customerName: t.customer_name,
           date: t.date,
-          // Handle items if they come back as string or object
           items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items,
           totalAmount: Number(t.total_amount),
           paidAmount: Number(t.paid_amount),

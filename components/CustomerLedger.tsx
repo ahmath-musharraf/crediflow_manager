@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/mockDb';
 import { Customer, CustomerType, User, Shop, ActivityLog } from '../types';

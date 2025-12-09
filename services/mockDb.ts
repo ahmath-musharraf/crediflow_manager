@@ -415,5 +415,3 @@ export const authenticateShop = (shopId: string, password: string): User | null 
   }
   return null;
 };
-]]></content>
-</change>

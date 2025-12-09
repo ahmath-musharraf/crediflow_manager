@@ -26,6 +26,10 @@
         background: #94a3b8; 
       }
     </style>
+  <script>
+    // Polyfill process for libraries that expect it (like Neon/Postgres drivers)
+    window.process = { env: { NODE_ENV: 'production' } };
+  </script>
   <script type="importmap">
 {
   "imports": {
@@ -34,7 +38,7 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
     "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
-    "@neondatabase/serverless": "https://esm.sh/@neondatabase/serverless@0.10.4"
+    "@neondatabase/serverless": "https://esm.sh/@neondatabase/serverless@0.10.4?bundle"
   }
 }
 </script>

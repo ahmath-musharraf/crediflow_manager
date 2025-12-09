@@ -17,16 +17,17 @@ const App: React.FC = () => {
   useEffect(() => {
     const initDb = async () => {
       // Race condition: If DB init hangs (e.g. bad connection string), 
-      // timeout after 3 seconds so the app still loads (in offline mode).
-      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3000));
+      // timeout after 2 seconds so the app still loads (in offline mode).
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 2000));
       
       try {
         await Promise.race([db.init(), timeoutPromise]);
       } catch (e) {
         console.warn("DB Init timed out or failed", e);
+      } finally {
+         // ALWAYS set ready, so the app unblocks
+         setIsDbReady(true);
       }
-      
-      setIsDbReady(true);
     };
     initDb();
   }, []);

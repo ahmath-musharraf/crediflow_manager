@@ -126,44 +126,77 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ user, currentShop }) =>
       setShopBalances(balances);
 
       // Merge Statement Items
-      const items: StatementItem[] = [
-        ...transactions.map(t => ({
+      const items: StatementItem[] = [];
+
+      transactions.forEach(t => {
+        // 1. The Sale (Debit full amount)
+        items.push({
           id: t.id,
           date: t.date,
-          type: 'SALE' as const,
+          type: 'SALE',
           description: `Invoice #${t.id.slice(-4)}`,
           amount: t.totalAmount,
-          balanceChange: t.balance, 
+          balanceChange: t.totalAmount, // Increases debt by full amount
           shopId: t.shopId,
           shopName: getShopName(t.shopId),
           runningBalance: 0
-        })),
-        ...payments.map(p => ({
+        });
+
+        // 2. The Initial Payment (Credit) if any
+        if (t.paidAmount > 0) {
+           items.push({
+            id: `${t.id}-payment`,
+            date: t.date, // Same date/time
+            type: 'PAYMENT',
+            description: `Down Payment (Inv #${t.id.slice(-4)})`,
+            amount: t.paidAmount,
+            balanceChange: -t.paidAmount, // Reduces debt
+            shopId: t.shopId,
+            shopName: getShopName(t.shopId),
+            runningBalance: 0
+          });
+        }
+      });
+
+      payments.forEach(p => {
+        items.push({
           id: p.id,
           date: p.date,
-          type: 'PAYMENT' as const,
+          type: 'PAYMENT',
           description: `Payment Received`,
           amount: p.amount,
           balanceChange: -p.amount,
           shopId: p.shopId,
           shopName: getShopName(p.shopId),
           runningBalance: 0
-        })),
-        ...expenses.map(e => ({
+        });
+      });
+
+      expenses.forEach(e => {
+        items.push({
           id: e.id,
           date: e.date,
-          type: 'EXPENSE' as const,
+          type: 'EXPENSE',
           description: `Expense: ${e.description}`,
           amount: e.amount,
-          balanceChange: e.amount, // Increases debt
+          balanceChange: e.amount,
           shopId: e.shopId,
           shopName: getShopName(e.shopId),
           runningBalance: 0
-        }))
-      ];
+        });
+      });
 
       // Sort Chronologically (Oldest First)
-      items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // If timestamps are identical (e.g. Sale & Down Payment), ensure SALE comes before PAYMENT
+      items.sort((a, b) => {
+        const timeA = new Date(a.date).getTime();
+        const timeB = new Date(b.date).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        
+        // Priority for same timestamp: SALE > EXPENSE > PAYMENT
+        const priority: Record<string, number> = { 'SALE': 1, 'EXPENSE': 2, 'PAYMENT': 3 };
+        return priority[a.type] - priority[b.type];
+      });
 
       let currentBalance = 0;
       let totalBilled = 0;

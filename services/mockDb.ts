@@ -12,7 +12,16 @@ const HARDCODED_DB_URL = '';
 // Helper to clean the connection string for browser compatibility
 const getSafeUrl = (url: string) => {
   if (!url) return '';
-  return url.replace(/&channel_binding=[^&]*/g, '').replace(/\?channel_binding=[^&]*&?/g, '?');
+  const cleanUrl = url.trim();
+  
+  // Strict validation: Must start with postgres:// or postgresql://
+  // This prevents the app from crashing if someone pastes a dashboard URL or random text
+  if (!cleanUrl.startsWith('postgres://') && !cleanUrl.startsWith('postgresql://')) {
+    console.warn("Invalid Database URL format. URL must start with 'postgres://'. Ignoring provided URL.");
+    return '';
+  }
+
+  return cleanUrl.replace(/&channel_binding=[^&]*/g, '').replace(/\?channel_binding=[^&]*&?/g, '?');
 };
 
 const getEffectiveDbUrl = () => {
@@ -39,7 +48,7 @@ const initSqlClient = () => {
       sql = neon(url);
       return true;
     } else {
-      console.warn("No DATABASE_URL provided. Running in offline mode.");
+      console.warn("No valid DATABASE_URL provided. Running in offline mode.");
       sql = null;
       return false;
     }
@@ -126,6 +135,7 @@ class MockDbService {
     if (!hasSql) {
        this.usingPostgres = false;
        this.isInitialized = true;
+       // Ensure default data exists if starting fresh offline
        if (this.shops.length === 0) {
         this.shops = INITIAL_SHOPS;
         this.products = INITIAL_PRODUCTS;

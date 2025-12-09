@@ -7,7 +7,7 @@ import { Customer, CustomerType, PaymentRecord, Product, Transaction, User, Role
 // =========================================================================================
 // PASTE YOUR NEON DATABASE URL HERE
 // You can get this from the Neon Dashboard (https://console.neon.tech)
-const RAW_DB_URL = 'postgresql://neondb_owner:npg_B0Z6sVdrPkLK@ep-delicate-silence-a4cwsorx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const RAW_DB_URL = 'https://console.neon.tech/app/projects/lucky-bread-76543471/branches/br-round-bar-a49o1jv1';
 
 // Helper to clean the connection string for browser compatibility
 // (Removes 'channel_binding' which causes errors in some browsers)
